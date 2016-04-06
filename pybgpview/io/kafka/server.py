@@ -46,11 +46,14 @@ class Server:
 
         # connect to kafka
         self.kc = pykafka.KafkaClient(hosts=self.brokers)
-        # set up our consumers and producers
+        # set up our consumers
         self.md_consumer =\
             self.topic(METADATA_TOPIC).get_simple_consumer(consumer_timeout_ms=1000)
         self.members_consumer =\
             self.topic(MEMBERS_TOPIC).get_simple_consumer(consumer_timeout_ms=1000)
+        self.gmd_consumer =\
+            self.topic(GLOBAL_METADATA_TOPIC).get_simple_consumer(consumer_timeout_ms=1000)
+        # and our producer
         self.gmd_producer =\
             self.topic(GLOBAL_METADATA_TOPIC).get_sync_producer()
 
@@ -83,6 +86,17 @@ class Server:
         logging.info("Finished member update. We now have %d members." %
                      len(self.members))
 
+    def scan_global_metadata(self):
+        for msg in self.gmd_consumer:
+            self.handle_gmd_msg(msg)
+        logging.info("Finished global metadata scan. Last published time: %d" %
+                     self.last_pub_time)
+
+    def load_metadata(self):
+        for msg in self.md_consumer:
+            self.handle_md_msg(msg)
+        self.handle_timeouts()
+
     def maybe_publish_view(self, view_time):
         time_now = int(time.time())
         if self.views[view_time]['wait_until'] <= time_now or \
@@ -97,10 +111,10 @@ class Server:
         for view_time in sorted(self.views.keys()):
             self.maybe_publish_view(view_time)
 
-    def load_metadata(self):
-        for msg in self.md_consumer:
-            self.handle_md_msg(msg)
-        self.handle_timeouts()
+    def handle_gmd_msg(self, msg):
+        msg = self.parse_gmd_msg(msg.value)
+        if msg['time'] > self.last_pub_time:
+            self.last_pub_time = msg['time']
 
     def handle_md_msg(self, msg):
         msg = self.parse_md_msg(msg.value)
@@ -130,6 +144,9 @@ class Server:
         # first, build our current membership
         self.update_members()
 
+        # second, lets see what already exists in the global meta topic
+        self.scan_global_metadata()
+
         # now, read the entire metadata topic
         self.load_metadata()
 
@@ -148,6 +165,12 @@ class Server:
         (strlen) = struct.unpack("=H", msg[0:2])
         (collector, time) = struct.unpack("=%dsL" % strlen, msg[2:])
         return {'collector': collector, 'time': time}
+
+    @staticmethod
+    def parse_gmd_msg(msg):
+        # there is lots of info in there, but we just want the time
+        view_time = struct.unpack("=L", msg[0:4])
+        return {'time': view_time[0]}
 
     @staticmethod
     def parse_md_msg(msg):
