@@ -99,11 +99,18 @@ class Server:
 
     def maybe_publish_view(self, view_time):
         time_now = int(time.time())
+        contributors_cnt = len(self.views[view_time]['members'])
         if self.views[view_time]['wait_until'] <= time_now or \
-                len(self.views[view_time]['members']) == len(self.members):
+                contributors_cnt == len(self.members):
             logging.info("Publishing view for %d at %d (%ds delay) with %d members" %
-                         (view_time, time_now, time_now - view_time,
-                          len(self.views[view_time]['members'])))
+                         (view_time, time_now, time_now - view_time, contributors_cnt))
+            if contributors_cnt < len(self.members):
+                # find which member(s) didn't contribute
+                missing = [m for m in self.members
+                           if m not in self.views[view_time]['members']]
+                logging.info("Published view at %d was missing data from: %s" %
+                             missing)
+            self.send_gmd_msg(view_time)
             del self.views[view_time]
             self.last_pub_time = view_time
 
@@ -134,9 +141,13 @@ class Server:
 
         return view_time
 
+    def send_gmd_msg(self, view_time):
+        msg = self.serialize_gmd_msg(view_time, self.views[view_time]['members'])
+        self.gmd_producer.produce(msg)
+
     def log_state(self):
         logging.info("Currently tracking %d partial views:" % len(self.views))
-        for view_time in self.views:
+        for view_time in sorted(self.views):
             logging.info("  Time: %d, # Members: %d" %
                          (view_time, len(self.views[view_time]['members'])))
 
@@ -191,6 +202,24 @@ class Server:
             res['sync_md_offset'] = sync_md_offset
             res['parent_time'] = parent_time
         return res
+
+    @staticmethod
+    def serialize_gmd_msg(view_time, members):
+        msg = struct.pack("=LH", view_time, len(members))
+        parts = []
+        for member in members:
+            mmsg = struct.pack("=H", len(member['collector'])) + \
+                struct.pack("=%dsQQc" % len(member['collector']),
+                            member['collector'],
+                            member['pfxs_offset'],
+                            member['peers_offset'],
+                            member['type'])
+            if member['type'] == 'D':
+                mmsg += struct.pack("=QL",
+                                    member['sync_md_offset'],
+                                    member['parent_time'])
+            parts.append(mmsg)
+        return msg + ''.join(parts)
 
 
 def main():
