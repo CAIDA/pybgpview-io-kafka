@@ -107,9 +107,9 @@ class Server:
             if contributors_cnt < len(self.members):
                 # find which member(s) didn't contribute
                 missing = [m for m in self.members
-                           if m not in self.views[view_time]['members']]
+                           if m not in self.views[view_time]['collectors']]
                 logging.info("Published view at %d was missing data from: %s" %
-                             missing)
+                             (view_time, missing))
             self.send_gmd_msg(view_time)
             del self.views[view_time]
             self.last_pub_time = view_time
@@ -133,11 +133,14 @@ class Server:
             return None
 
         if view_time not in self.views:
+            time_now = int(time.time())
             self.views[view_time] = dict()
-            self.views[view_time]['wait_until'] = view_time + self.pub_timeout
+            self.views[view_time]['wait_until'] = time_now + self.pub_timeout
             self.views[view_time]['members'] = []
+            self.views[view_time]['collectors'] = []
 
         self.views[view_time]['members'].append(msg)
+        self.views[view_time]['collectors'].append(msg['collector'])
 
         return view_time
 
