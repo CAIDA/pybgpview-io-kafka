@@ -33,6 +33,7 @@ class Server:
         self.pub_timeout = publication_timeout
         self.member_timeout = member_timeout
         self.last_pub_time = 0
+        self.last_sync_offset = -1
 
         # our active members
         self.members = dict()
@@ -100,16 +101,23 @@ class Server:
     def maybe_publish_view(self, view_time):
         time_now = int(time.time())
         contributors_cnt = len(self.views[view_time]['members'])
-        if self.views[view_time]['wait_until'] <= time_now or \
+        tv = self.views[view_time]
+        if tv['arr_time'] + self.pub_timeout <= time_now or \
                 contributors_cnt == len(self.members):
-            logging.info("Publishing view for %d at %d (%ds delay) with %d members" %
-                         (view_time, time_now, time_now - view_time, contributors_cnt))
+            logging.info("Publishing view for %d at %d "
+                         "(%ds realtime delay, %ds buffer delay) "
+                         "with %d members" %
+                         (view_time, time_now, time_now - view_time,
+                          time_now - tv['arr_time'],
+                          contributors_cnt))
             if contributors_cnt < len(self.members):
                 # find which member(s) didn't contribute
                 missing = [m for m in self.members
-                           if m not in self.views[view_time]['collectors']]
+                           if m not in tv['collectors']]
                 logging.info("Published view at %d was missing data from: %s" %
                              (view_time, missing))
+            if tv['type'] == 'S':
+                self.last_sync_offset = -1
             self.send_gmd_msg(view_time)
             del self.views[view_time]
             self.last_pub_time = view_time
@@ -134,10 +142,12 @@ class Server:
 
         if view_time not in self.views:
             time_now = int(time.time())
-            self.views[view_time] = dict()
-            self.views[view_time]['wait_until'] = time_now + self.pub_timeout
-            self.views[view_time]['members'] = []
-            self.views[view_time]['collectors'] = []
+            nv = dict()
+            nv['arr_time'] = time_now
+            nv['type'] = msg['type']
+            nv['members'] = []
+            nv['collectors'] = []
+            self.views[view_time] = nv
 
         self.views[view_time]['members'].append(msg)
         self.views[view_time]['collectors'].append(msg['collector'])
@@ -145,8 +155,18 @@ class Server:
         return view_time
 
     def send_gmd_msg(self, view_time):
-        msg = self.serialize_gmd_msg(view_time, self.views[view_time]['members'])
+        tv = self.views[view_time]
+        if tv['type'] == 'S':
+            self.last_sync_offset = -1
+        logging.info("Setting last sync offset: %d" % self.last_sync_offset)
+        msg = self.serialize_gmd_msg(view_time,
+                                     self.last_sync_offset,
+                                     tv['members'])
         self.gmd_producer.produce(msg)
+        next_offset = self.topic(GLOBAL_METADATA_TOPIC).\
+            latest_available_offsets()[0][0][0]
+        if tv['type'] == 'S':
+            self.last_sync_offset = next_offset - 1
 
     def log_state(self):
         logging.info("Currently tracking %d partial views:" % len(self.views))
@@ -207,13 +227,15 @@ class Server:
         return res
 
     @staticmethod
-    def serialize_gmd_msg(view_time, members):
-        msg = struct.pack("=LH", view_time, len(members))
+    def serialize_gmd_msg(view_time, last_sync_offset, members):
+        msg = struct.pack("=H", len(members))
         parts = []
         for member in members:
-            mmsg = struct.pack("=H", len(member['collector'])) + \
-                struct.pack("=%dsQQc" % len(member['collector']),
-                            member['collector'],
+            coll = member['collector']
+            mmsg = struct.pack("=H", len(coll)) + \
+                struct.pack("=%dsLQQc" % len(coll),
+                            coll,
+                            view_time,
                             member['pfxs_offset'],
                             member['peers_offset'],
                             member['type'])
@@ -222,6 +244,7 @@ class Server:
                                     member['sync_md_offset'],
                                     member['parent_time'])
             parts.append(mmsg)
+        parts.append(struct.pack("=q", last_sync_offset))
         return msg + ''.join(parts)
 
 
