@@ -17,6 +17,9 @@ PUBLICATION_TIMEOUT_DEFAULT = 1800
 # before a member is declared dead.
 MEMBER_TIMEOUT_DEFAULT = 3600*2
 
+METRIC_PREFIX_DEFAULT = "bgp"
+METRIC_PATH = "meta.bgpview.server.kafka"
+
 
 class Server:
     """ Watches the members and metadata topics of a BGPView Kafka stream and
@@ -27,11 +30,13 @@ class Server:
                  brokers,
                  namespace="bgpview-test",
                  publication_timeout=PUBLICATION_TIMEOUT_DEFAULT,
-                 member_timeout=MEMBER_TIMEOUT_DEFAULT):
+                 member_timeout=MEMBER_TIMEOUT_DEFAULT,
+                 metric_prefix=METRIC_PREFIX_DEFAULT):
         self.brokers = brokers
         self.namespace = namespace
         self.pub_timeout = publication_timeout
         self.member_timeout = member_timeout
+        self.metric_prefix = metric_prefix
         self.last_pub_time = 0
         self.last_sync_offset = -1
 
@@ -60,6 +65,10 @@ class Server:
 
     def topic(self, name):
         return self.kc.topics[self.namespace + '.' + name]
+
+    def dump_metric(self, metric, value, time):
+        print "%s.%s.%s %d %d" %\
+              (self.metric_prefix, METRIC_PATH, metric, value, time)
 
     def update_members(self):
         logging.info("Starting member update with %d members" %
@@ -115,6 +124,14 @@ class Server:
                          (view_time, time_now, time_now - view_time,
                           time_now - tv['arr_time'],
                           contributors_cnt))
+            self.dump_metric("publication.realtime_delay",
+                             time_now - view_time, view_time)
+            self.dump_metric("publication.buffer_delay",
+                             time_now - tv['arr_time'], view_time)
+            self.dump_metric("publication.member_cnt",
+                             contributors_cnt, view_time)
+            # TODO: add count of peers
+            self.dump_metric("member_cnt", len(self.members), view_time)
             if contributors_cnt < len(self.members):
                 # find which member(s) didn't contribute
                 missing = [m for m in self.members
@@ -280,6 +297,10 @@ def main():
                         help='Member timeout: How much time may elapse between'
                         + ' messages to the members topic before a member is'
                         + ' declared dead.')
+    parser.add_argument('-p', '--metric-prefix',
+                        nargs='?', required=False,
+                        default=METRIC_PREFIX_DEFAULT,
+                        help='Prefix to use for timeseries paths')
 
     opts = vars(parser.parse_args())
 
