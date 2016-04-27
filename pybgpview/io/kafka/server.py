@@ -18,7 +18,7 @@ PUBLICATION_TIMEOUT_DEFAULT = 1800
 MEMBER_TIMEOUT_DEFAULT = 3600*2
 
 METRIC_PREFIX_DEFAULT = "bgp"
-METRIC_PATH = "meta.bgpview.server.kafka"
+METRIC_PATH = "meta.bgpview.server.kafka.channels"
 
 
 class Server:
@@ -75,7 +75,7 @@ class Server:
         return self.kc.topics[self.namespace + '.' + name]
 
     def dump_metric(self, metric, value, time):
-        path = METRIC_PATH
+        path = METRIC_PATH + ".default"
         if self.pub_channel:
             path = METRIC_PATH + "." + str(self.pub_channel)
         print "%s.%s.%s %d %d" %\
