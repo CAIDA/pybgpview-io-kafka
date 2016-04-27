@@ -49,7 +49,7 @@ class Server:
         self.kc = pykafka.KafkaClient(hosts=self.brokers)
         # set up our consumers
         self.md_consumer =\
-            self.topic(METADATA_TOPIC).get_simple_consumer(consumer_timeout_ms=1000)
+            self.topic(METADATA_TOPIC).get_simple_consumer(consumer_timeout_ms=10000)
         self.members_consumer =\
             self.topic(MEMBERS_TOPIC).get_simple_consumer(consumer_timeout_ms=1000)
         self.gmd_consumer =\
@@ -99,6 +99,11 @@ class Server:
         self.handle_timeouts()
 
     def maybe_publish_view(self, view_time):
+        if view_time <= self.last_pub_time:
+            # already published a view for this time, ignore this view
+            logging.info("Skipping view for %d" % view_time)
+            return
+
         time_now = int(time.time())
         contributors_cnt = len(self.views[view_time]['members'])
         tv = self.views[view_time]
@@ -192,7 +197,9 @@ class Server:
                     if view_time:
                         self.maybe_publish_view(view_time)
                     self.handle_timeouts()
+                    self.update_members()
                     self.log_state()
+            self.update_members()
 
     @staticmethod
     def parse_member_msg(msg):
@@ -228,7 +235,7 @@ class Server:
 
     @staticmethod
     def serialize_gmd_msg(view_time, last_sync_offset, members):
-        msg = struct.pack("=H", len(members))
+        msg = struct.pack("=LH", view_time, len(members))
         parts = []
         for member in members:
             coll = member['collector']
