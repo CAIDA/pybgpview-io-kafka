@@ -75,8 +75,11 @@ class Server:
         return self.kc.topics[self.namespace + '.' + name]
 
     def dump_metric(self, metric, value, time):
+        path = METRIC_PATH
+        if self.pub_channel:
+            path = METRIC_PATH + "." + str(self.pub_channel)
         print "%s.%s.%s %d %d" %\
-              (self.metric_prefix, METRIC_PATH, metric, value, time)
+              (self.metric_prefix, path, metric, value, time)
 
     def update_members(self):
         logging.info("Starting member update with %d members" %
