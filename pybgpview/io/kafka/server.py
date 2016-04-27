@@ -124,7 +124,8 @@ class Server:
         time_now = int(time.time())
         tv = self.views[view_time]
         contributors_cnt = len(tv['members'])
-        if tv['arr_time'] + self.pub_timeout <= time_now or \
+        stime = tv['arr_time'] if tv['is_hist'] else view_time
+        if stime + self.pub_timeout <= time_now or \
                 contributors_cnt == len(self.members):
             logging.info("Publishing view for %d at %d "
                          "(%ds realtime delay, %ds buffer delay) "
@@ -173,12 +174,14 @@ class Server:
 
         if view_time not in self.views:
             time_now = int(time.time())
+            is_hist = True if time_now > view_time else False
             nv = dict()
             nv['arr_time'] = time_now
             nv['type'] = msg['type']
             nv['members'] = []
             nv['collectors'] = []
             nv['peers_cnt'] = 0
+            nv['is_hist'] = is_hist
             self.views[view_time] = nv
 
         self.views[view_time]['members'].append(msg)
