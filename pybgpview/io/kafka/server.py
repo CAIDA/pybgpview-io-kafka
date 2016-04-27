@@ -122,8 +122,8 @@ class Server:
             return
 
         time_now = int(time.time())
-        contributors_cnt = len(self.views[view_time]['members'])
         tv = self.views[view_time]
+        contributors_cnt = len(tv['members'])
         if tv['arr_time'] + self.pub_timeout <= time_now or \
                 contributors_cnt == len(self.members):
             logging.info("Publishing view for %d at %d "
@@ -138,7 +138,8 @@ class Server:
                              time_now - tv['arr_time'], view_time)
             self.dump_metric("publication.member_cnt",
                              contributors_cnt, view_time)
-            # TODO: add count of peers
+            self.dump_metric("publication.peers_cnt", tv['peers_cnt'],
+                             view_time)
             self.dump_metric("member_cnt", len(self.members), view_time)
             if contributors_cnt < len(self.members):
                 # find which member(s) didn't contribute
@@ -177,10 +178,12 @@ class Server:
             nv['type'] = msg['type']
             nv['members'] = []
             nv['collectors'] = []
+            nv['peers_cnt'] = 0
             self.views[view_time] = nv
 
         self.views[view_time]['members'].append(msg)
         self.views[view_time]['collectors'].append(msg['collector'])
+        self.views[view_time]['peers_cnt'] += int(msg['peers_cnt'])
 
         return view_time
 
@@ -241,12 +244,13 @@ class Server:
     @staticmethod
     def parse_md_msg(msg):
         strlen = struct.unpack("=H", msg[0:2])
-        msglen = strlen[0] + 4 + 8 + 8 + 1
-        (collector, time, pfxs_offset, peers_offset, type) =\
-            struct.unpack("=%dsLQQc" % strlen, msg[2:2+msglen])
+        msglen = strlen[0] + 4 + 4 + 8 + 8 + 1
+        (collector, time, peers_cnt, pfxs_offset, peers_offset, type) =\
+            struct.unpack("=%dsLLQQc" % strlen, msg[2:2+msglen])
         res = {
             'collector': collector,
             'time': time,
+            'peers_cnt': peers_cnt,
             'pfxs_offset': pfxs_offset,
             'peers_offset': peers_offset,
             'type': type,
@@ -265,9 +269,10 @@ class Server:
         for member in members:
             coll = member['collector']
             mmsg = struct.pack("=H", len(coll)) + \
-                struct.pack("=%dsLQQc" % len(coll),
+                struct.pack("=%dsLLQQc" % len(coll),
                             coll,
                             view_time,
+                            member['peers_cnt'],
                             member['pfxs_offset'],
                             member['peers_offset'],
                             member['type'])
