@@ -29,11 +29,13 @@ class Server:
     def __init__(self,
                  brokers,
                  namespace="bgpview-test",
+                 pub_channel=None,
                  publication_timeout=PUBLICATION_TIMEOUT_DEFAULT,
                  member_timeout=MEMBER_TIMEOUT_DEFAULT,
                  metric_prefix=METRIC_PREFIX_DEFAULT):
         self.brokers = brokers
         self.namespace = namespace
+        self.pub_channel = pub_channel
         self.pub_timeout = publication_timeout
         self.member_timeout = member_timeout
         self.metric_prefix = metric_prefix
@@ -50,6 +52,12 @@ class Server:
                             format='%(asctime)s|SERVER|%(levelname)s: %(message)s',
                             datefmt='%Y-%m-%d %H:%M:%S')
 
+        # build the GMD topic
+        gmd_topic = GLOBAL_METADATA_TOPIC
+        if self.pub_channel:
+            gmd_topic = GLOBAL_METADATA_TOPIC + "." + str(self.pub_channel)
+        logging.info("Setting GMD topic to %s" % gmd_topic)
+
         # connect to kafka
         self.kc = pykafka.KafkaClient(hosts=self.brokers)
         # set up our consumers
@@ -58,7 +66,7 @@ class Server:
         self.members_consumer =\
             self.topic(MEMBERS_TOPIC).get_simple_consumer(consumer_timeout_ms=1000)
         self.gmd_consumer =\
-            self.topic(GLOBAL_METADATA_TOPIC).get_simple_consumer(consumer_timeout_ms=1000)
+            self.topic(gmd_topic).get_simple_consumer(consumer_timeout_ms=1000)
         # and our producer
         self.gmd_producer =\
             self.topic(GLOBAL_METADATA_TOPIC).get_sync_producer()
@@ -280,6 +288,9 @@ def main():
     parser.add_argument('-b',  '--brokers',
                         nargs='?', required=True,
                         help='Comma-separated list of broker URIs')
+    parser.add_argument('-c', '--pub-channel',
+                        nargs='?', required=False,
+                        help='Channel to publish Global Metadata messages to')
     parser.add_argument('-n',  '--namespace',
                         nargs='?', required=False,
                         default='bgpview-test',
