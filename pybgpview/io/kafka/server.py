@@ -2,6 +2,7 @@ import argparse
 import logging
 import pykafka
 import struct
+import sys
 import time
 
 METADATA_TOPIC = "meta"
@@ -80,6 +81,7 @@ class Server:
             path = METRIC_PATH + "." + str(self.pub_channel)
         print "%s.%s.%s %d %d" %\
               (self.metric_prefix, path, metric, value, view_time)
+        sys.stdout.flush()
 
     def update_members(self):
         logging.info("Starting member update with %d members" %
