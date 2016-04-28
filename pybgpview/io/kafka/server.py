@@ -53,10 +53,10 @@ class Server:
                             datefmt='%Y-%m-%d %H:%M:%S')
 
         # build the GMD topic
-        gmd_topic = GLOBAL_METADATA_TOPIC
+        self.gmd_topic = GLOBAL_METADATA_TOPIC
         if self.pub_channel:
-            gmd_topic = GLOBAL_METADATA_TOPIC + "." + str(self.pub_channel)
-        logging.info("Setting GMD topic to %s" % gmd_topic)
+            self.gmd_topic = GLOBAL_METADATA_TOPIC + "." + str(self.pub_channel)
+        logging.info("Setting GMD topic to %s" % self.gmd_topic)
 
         # connect to kafka
         self.kc = pykafka.KafkaClient(hosts=self.brokers)
@@ -66,20 +66,20 @@ class Server:
         self.members_consumer =\
             self.topic(MEMBERS_TOPIC).get_simple_consumer(consumer_timeout_ms=1000)
         self.gmd_consumer =\
-            self.topic(gmd_topic).get_simple_consumer(consumer_timeout_ms=1000)
+            self.topic(self.gmd_topic).get_simple_consumer(consumer_timeout_ms=1000)
         # and our producer
         self.gmd_producer =\
-            self.topic(GLOBAL_METADATA_TOPIC).get_sync_producer()
+            self.topic(self.gmd_topic).get_sync_producer()
 
     def topic(self, name):
         return self.kc.topics[self.namespace + '.' + name]
 
-    def dump_metric(self, metric, value, time):
+    def dump_metric(self, metric, value, view_time):
         path = METRIC_PATH + ".default"
         if self.pub_channel:
             path = METRIC_PATH + "." + str(self.pub_channel)
         print "%s.%s.%s %d %d" %\
-              (self.metric_prefix, path, metric, value, time)
+              (self.metric_prefix, path, metric, value, view_time)
 
     def update_members(self):
         logging.info("Starting member update with %d members" %
@@ -202,7 +202,7 @@ class Server:
                                      self.last_sync_offset,
                                      tv['members'])
         self.gmd_producer.produce(msg)
-        next_offset = self.topic(GLOBAL_METADATA_TOPIC).\
+        next_offset = self.topic(self.gmd_topic).\
             latest_available_offsets()[0][0][0]
         if tv['type'] == 'S':
             self.last_sync_offset = next_offset - 1
