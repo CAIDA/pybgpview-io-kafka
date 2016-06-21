@@ -129,7 +129,7 @@ class Server:
         time_now = int(time.time())
         tv = self.views[view_time]
         contributors_cnt = len(tv['members'])
-        stime = tv['arr_time'] if tv['is_hist'] else view_time
+        stime = view_time  # timeout based on realtime delay
         if stime + self.pub_timeout <= time_now or \
                 contributors_cnt == len(self.members):
             logging.info("Publishing view for %d at %d "
