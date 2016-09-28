@@ -189,9 +189,11 @@ class Server:
             nv['is_hist'] = is_hist
             self.views[view_time] = nv
 
-        self.views[view_time]['members'].append(msg)
-        self.views[view_time]['collectors'].append(msg['collector'])
-        self.views[view_time]['peers_cnt'] += int(msg['peers_cnt'])
+        # only append the view if there is not already one from this collector
+        if msg['collector'] not in self.views[view_time]['collectors']:
+            self.views[view_time]['members'].append(msg)
+            self.views[view_time]['collectors'].append(msg['collector'])
+            self.views[view_time]['peers_cnt'] += int(msg['peers_cnt'])
 
         return view_time
 
