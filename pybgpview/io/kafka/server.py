@@ -276,7 +276,11 @@ class Server:
     def serialize_gmd_msg(view_time, last_sync_offset, members):
         msg = struct.pack("=LH", view_time, len(members))
         parts = []
+        type = None
         for member in members:
+            if not type:
+                type = member['type']
+            assert member['type'] == type, "Inconsistent type: %s" % members
             coll = member['collector']
             mmsg = struct.pack("=H", len(coll)) + \
                 struct.pack("=%dsLLQQc" % len(coll),
