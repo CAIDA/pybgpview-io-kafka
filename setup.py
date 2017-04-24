@@ -14,4 +14,4 @@ setup(name='pybgpview.io.kafka',
       entry_points={'console_scripts': [
           'bgpview-server-kafka=pybgpview.io.kafka.server:main'
       ]},
-      install_requires=['pykafka', 'python-snappy', '_pytimeseries'])
+      install_requires=['pykafka', 'python-snappy', 'pytimeseries'])
