@@ -1,6 +1,7 @@
 import argparse
 import logging
 import pykafka
+import _pytimeseries
 import struct
 import sys
 import time
@@ -29,6 +30,7 @@ class Server:
 
     def __init__(self,
                  brokers,
+                 timeseries_config,
                  namespace="bgpview-test",
                  pub_channel=None,
                  publication_timeout=PUBLICATION_TIMEOUT_DEFAULT,
@@ -53,6 +55,10 @@ class Server:
                             format='%(asctime)s|SERVER|%(levelname)s: %(message)s',
                             datefmt='%Y-%m-%d %H:%M:%S')
 
+        self.ts = None
+        self.kp = None
+        self._init_timeseries(timeseries_config)
+
         # build the GMD topic
         self.gmd_topic = GLOBAL_METADATA_TOPIC
         if self.pub_channel:
@@ -72,16 +78,39 @@ class Server:
         self.gmd_producer =\
             self.topic(self.gmd_topic).get_sync_producer()
 
+    def _init_timeseries(self, config):
+        logging.info("Initializing PyTimeseries")
+        self.ts = _pytimeseries.Timeseries()
+        args = config.split(" ", 1)
+        name = args[0]
+        if len(args) == 2:
+            opts = args[1]
+        else:
+            opts = None
+        logging.info("Enabling timeseries backend '%s'" % name)
+        be = self.ts.get_backend_by_name(name)
+        if not be:
+            logging.error("Could get get TS backend %s" % name)
+            sys.exit(-1)
+        if not self.ts.enable_backend(be, opts):
+            logging.error("Could get enable TS backend %s" % name)
+            sys.exit(-1)
+        self.kp = self.ts.new_keypackage(reset=False, disable=True)
+
     def topic(self, name):
         return self.kc.topics[self.namespace + '.' + name]
 
-    def dump_metric(self, metric, value, view_time):
+    def update_metric(self, metric, value):
         path = METRIC_PATH + ".default"
         if self.pub_channel:
             path = METRIC_PATH + "." + str(self.pub_channel)
-        print "%s.%s.%s %d %d" %\
-              (self.metric_prefix, path, metric, value, view_time)
-        sys.stdout.flush()
+        key = "%s.%s.%s" % (self.metric_prefix, path, metric)
+        idx = self.kp.get_key(key)
+        if idx is None:
+            idx = self.kp.add_key(key)
+        else:
+            self.kp.enable_key(idx)
+        self.kp.set(idx, value)
 
     def update_members(self):
         logging.info("Starting member update with %d members" %
@@ -138,15 +167,15 @@ class Server:
                          (view_time, time_now, time_now - view_time,
                           time_now - tv['arr_time'],
                           contributors_cnt))
-            self.dump_metric("publication.realtime_delay",
-                             time_now - view_time, view_time)
-            self.dump_metric("publication.buffer_delay",
-                             time_now - tv['arr_time'], view_time)
-            self.dump_metric("publication.member_cnt",
-                             contributors_cnt, view_time)
-            self.dump_metric("publication.peers_cnt", tv['peers_cnt'],
-                             view_time)
-            self.dump_metric("member_cnt", len(self.members), view_time)
+            self.update_metric("publication.realtime_delay",
+                             time_now - view_time)
+            self.update_metric("publication.buffer_delay",
+                             time_now - tv['arr_time'])
+            self.update_metric("publication.member_cnt",
+                             contributors_cnt)
+            self.update_metric("publication.peers_cnt", tv['peers_cnt'])
+            self.update_metric("member_cnt", len(self.members))
+            self.kp.flush(view_time)  # will also disable all keys
             if contributors_cnt < len(self.members):
                 # find which member(s) didn't contribute
                 missing = [m for m in self.members
@@ -307,6 +336,9 @@ def main():
     parser.add_argument('-b',  '--brokers',
                         nargs='?', required=True,
                         help='Comma-separated list of broker URIs')
+    parser.add_argument('-k',  '--timeseries-config',
+                        nargs='?', required=True,
+                        help='libtimeseries backend config')
     parser.add_argument('-c', '--pub-channel',
                         nargs='?', required=False,
                         help='Channel to publish Global Metadata messages to')
