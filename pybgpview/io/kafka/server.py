@@ -149,7 +149,7 @@ class Server:
             self.handle_md_msg(msg)
         self.handle_timeouts()
 
-    def maybe_publish_view(self, view_time):
+    def maybe_publish_view(self, view_time, ignore_timeouts=False):
         if view_time <= self.last_pub_time:
             # already published a view for this time, ignore this view
             logging.info("Skipping view for %d" % view_time)
@@ -159,7 +159,7 @@ class Server:
         tv = self.views[view_time]
         contributors_cnt = len(tv['members'])
         stime = view_time  # timeout based on realtime delay
-        if stime + self.pub_timeout <= time_now or \
+        if (not ignore_timeouts and (stime + self.pub_timeout <= time_now)) or \
                 contributors_cnt == len(self.members):
             logging.info("Publishing view for %d at %d "
                          "(%ds realtime delay, %ds buffer delay) "
@@ -189,8 +189,15 @@ class Server:
             self.last_pub_time = view_time
 
     def handle_timeouts(self):
+        self.update_members()
         for view_time in sorted(self.views.keys()):
-            self.maybe_publish_view(view_time)
+            # if this view is earlier than something we've already
+            # published, stop tracking it
+            if view_time <= self.last_pub_time:
+                del self.views[view_time]
+            else:
+                self.maybe_publish_view(view_time)
+        self.log_state()
 
     def handle_gmd_msg(self, msg):
         msg = self.parse_gmd_msg(msg.value)
@@ -262,11 +269,9 @@ class Server:
                 if msg is not None:
                     view_time = self.handle_md_msg(msg)
                     if view_time:
-                        self.maybe_publish_view(view_time)
-                    self.handle_timeouts()
-                    self.update_members()
-                    self.log_state()
-            self.update_members()
+                        self.maybe_publish_view(view_time, ignore_timeouts=True)
+                self.handle_timeouts()
+            self.handle_timeouts()
 
     @staticmethod
     def parse_member_msg(msg):
