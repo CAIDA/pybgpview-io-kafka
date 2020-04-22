@@ -154,6 +154,11 @@ class Server:
             # already published a view for this time, ignore this view
             logging.info("Skipping view for %d" % view_time)
             return
+        
+        if view_time != sorted(self.views.keys())[0]:
+            # earlier unpublished view exists
+            logging.info("Delay publishing view for %d" % view_time)
+            return
 
         time_now = int(time.time())
         tv = self.views[view_time]
