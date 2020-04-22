@@ -155,7 +155,7 @@ class Server:
             logging.info("Skipping view for %d" % view_time)
             return
         
-        if self.views and view_time != sorted(self.views.keys())[0]:
+        if view_time != sorted(self.views.keys())[0]:
             # earlier unpublished view exists
             logging.info("Delay publishing view for %d" % view_time)
             return
